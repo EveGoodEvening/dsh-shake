@@ -1,0 +1,59 @@
+name: Dependency audit
+
+on:
+  schedule:
+    - cron: '47 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.repository == 'EveGoodEvening/dsh-shake'
+    name: Audit ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: root
+            directory: .
+            manager: pnpm
+          - target: public-host-fixtures
+            directory: .verification/contracts
+            manager: npm
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Set up pnpm
+        if: matrix.manager == 'pnpm'
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          run_install: false
+          cache: false
+
+      # Audit committed lockfiles without installing dependencies or running scripts.
+      - name: Audit pnpm lockfile
+        if: matrix.manager == 'pnpm'
+        working-directory: ${{ matrix.directory }}
+        run: pnpm audit --audit-level=high
+
+      - name: Audit npm lockfile
+        if: matrix.manager == 'npm'
+        working-directory: ${{ matrix.directory }}
+        run: npm audit --package-lock-only --audit-level=high

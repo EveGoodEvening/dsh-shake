@@ -1,0 +1,27 @@
+# Installed dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+.npm/
+
+# Generated builds and test output
+/lib/
+/dist/
+/*.tgz
+coverage/
+.vitest/
+*.tsbuildinfo
+
+# Logs and local environment secrets
+*.log
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

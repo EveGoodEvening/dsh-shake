@@ -1,0 +1,5 @@
+# Wait 7 days before accepting newly published dependency versions.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+minimumReleaseAgeExclude:
+  - '@deepseek-ai/*'

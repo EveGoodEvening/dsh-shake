@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-shake
+      name: dsh-shake
+      config: {}
