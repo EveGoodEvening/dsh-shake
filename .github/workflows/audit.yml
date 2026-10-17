@@ -57,3 +57,66 @@ jobs:
         if: matrix.manager == 'npm'
         working-directory: ${{ matrix.directory }}
         run: npm audit --package-lock-only --audit-level=high
+
+  report:
+    needs: audit
+    # Branch experiments and cancelled runs cannot alter the default-branch incident.
+    if: >-
+      ${{ always() && github.repository == 'EveGoodEvening/dsh-shake'
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+          && (needs.audit.result == 'success' || needs.audit.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      # No checkout or dependency code runs with the issue-writing token.
+      - name: Report failure or recovery
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          CHECK_RESULT: ${{ needs.audit.result }}
+        with:
+          script: |
+            const marker = '<!-- dsh-shake-dependency-audit -->';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'open', creator: 'github-actions[bot]', per_page: 100,
+            });
+            const issue = issues.find(item => !item.pull_request && item.body?.includes(marker));
+            if (process.env.CHECK_RESULT === 'success') {
+              if (issue) {
+                await github.rest.issues.createComment({
+                  ...context.repo, issue_number: issue.number,
+                  body: `Both dependency audits passed. [Passing run](${run}).`,
+                });
+                await github.rest.issues.update({
+                  ...context.repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',
+                });
+                core.notice(`Closed recovered dependency audit incident #${issue.number}`);
+              }
+              return;
+            }
+
+            const body = [
+              marker,
+              `@${context.repo.owner} the dependency audit failed.`,
+              '',
+              `At least one audit job failed. [Workflow logs](${run}).`,
+              '',
+              '- Root: `pnpm audit --audit-level=high` against `pnpm-lock.yaml`.',
+              '- Public-host fixtures: `npm audit --package-lock-only --audit-level=high` in `.verification/contracts`.',
+              '',
+              'A failure may indicate high/critical vulnerabilities or a setup, registry, or runner error. Check the failed step before attributing a vulnerability.',
+              'Re-run **Dependency audit** from Actions on the default branch after fixing the failure.',
+              '',
+              'Repeated failures update this issue with the latest run without new comments. A passing default-branch check closes the issue.',
+            ].join('\n');
+            if (issue) {
+              await github.rest.issues.update({ ...context.repo, issue_number: issue.number, body });
+              core.notice(`Updated dependency audit incident #${issue.number}`);
+            } else {
+              const { data: created } = await github.rest.issues.create({
+                ...context.repo, title: 'Dependency audit failed', body,
+              });
+              core.notice(`Created dependency audit incident #${created.number}`);
+            }
