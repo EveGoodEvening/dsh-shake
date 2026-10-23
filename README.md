@@ -21,7 +21,7 @@ A plugin for manually reducing context usage in **DeepSeek Harness (DSH)**. It r
 
 The supported host service versions are defined by `peerDependencies` in [package.json](package.json). Cordis refers to `@deepseek-ai/cordis`, not the unscoped `cordis` package. Compatibility outside the ranges above is not guaranteed.
 
-- **Node.js:** `^22.19.0 || >=24.0.0`.
+- **Node.js:** `^22.23.4 || ^24.22.1 || >=26.12.1`. CI pins `24.22.1`; use a patched runtime with its normal CA verification enabled. Development retains pnpm `11.7.0`, while publishing uses npm `12.2.1`.
 - **Environment:** An initialized DSH Web profile.
 
 Install `dsh-shake@latest` from npm.

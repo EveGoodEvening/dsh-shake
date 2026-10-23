@@ -21,7 +21,7 @@
 
 宿主服务的支持范围以 [package.json](package.json) 的 `peerDependencies` 为准。Cordis 指 `@deepseek-ai/cordis`，不是未加 scope 的 `cordis` 包；不承诺上述范围以外的版本兼容。
 
-- **Node.js：** `^22.19.0 || >=24.0.0`。
+- **Node.js：** `^22.23.4 || ^24.22.1 || >=26.12.1`。CI 固定使用 `24.22.1`，请使用已修补的运行时并保留正常 CA 校验。开发仍使用 pnpm `11.7.0`，发布使用 npm `12.2.1`。
 - **使用环境：** 已初始化的 DSH Web profile。
 
 可通过 npm 安装 `dsh-shake@latest`。

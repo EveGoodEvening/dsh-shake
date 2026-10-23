@@ -3,3 +3,6 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - '@deepseek-ai/*'
+
+overrides:
+  'vite@^8': 8.3.4

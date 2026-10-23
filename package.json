@@ -24,7 +24,7 @@
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -63,6 +63,6 @@
     "@types/node": "22.20.0",
     "tsdown": "0.22.2",
     "typescript": "6.0.3",
-    "vitest": "4.1.8"
+    "vitest": "4.1.12"
   }
 }
