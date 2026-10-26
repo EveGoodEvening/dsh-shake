@@ -1,6 +1,6 @@
 # dsh-shake
 
-[简体中文](README.zh.md)
+English | [简体中文](README.zh.md)
 
 A plugin for manually reducing context usage in **DeepSeek Harness (DSH)**. It replaces old tool output and large code and XML blocks in assistant replies with short placeholders. When needed, the model can retrieve the original text through `shake_read`.
 

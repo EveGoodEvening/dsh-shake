@@ -1,6 +1,6 @@
 # dsh-shake
 
-[English](README.md)
+[English](README.md) | 简体中文
 
 为 **DeepSeek Harness（DSH）** 手动减少上下文占用的插件。它把旧工具输出、助手回答中的大段代码和 XML 换成短占位符；需要时，模型可以通过 `shake_read` 回读原文。
 
