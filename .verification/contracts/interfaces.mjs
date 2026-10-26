@@ -9,8 +9,8 @@ import { CommandRuntime, parseCommand } from '@deepseek-ai/dsh-commands'
 import { toolPairingBalancedBefore, toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
 import { z } from 'zod'
 
-// Temporary published-package consumer. The host module owns actual persistence,
-// invariants, adapter composition and teardown; no private path is imported here.
+// Published-package consumer. The host module owns actual persistence,
+// adapter composition and teardown; no private path is imported here.
 export async function runInterfaces({ ctx, agent, evidence = [] }) {
   const session = agent.session
   assert.ok(session instanceof Session)

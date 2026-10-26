@@ -18,12 +18,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import { installLlmReplay } from '@deepseek-ai/dsh-llm-replay';
-import { InvariantRegistry } from '@deepseek-ai/dsh-invariants';
-import JsonlPersistence from '@deepseek-ai/dsh-session-persistence-jsonl';
-import * as sessionInvariant from '@deepseek-ai/dsh-session/invariant';
-import * as agentInvariant from '@deepseek-ai/dsh-agent/invariant';
-import * as loopInvariant from '@deepseek-ai/dsh-agent-loop/invariant';
-import * as commandsInvariant from '@deepseek-ai/dsh-commands/invariant';
+import * as JsonlPersistence from '@deepseek-ai/dsh-session-persistence-jsonl';
 import { z } from 'zod';
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic';
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner';
@@ -73,7 +68,7 @@ export async function installRecoveryCoexistence(host, { thresholdRatio = 0.99 }
   };
 }
 
-const VERSION = process.env.SHAKE_COMPAT_DSH_VERSION ?? '0.2.0-rc.2';
+const VERSION = process.env.SHAKE_COMPAT_DSH_VERSION ?? '0.2.1-rc.2';
 const CONTROL_KIND = 'published-contract-control';
 const CONTROL_SOURCE = { kind: CONTROL_KIND, schema: 1, operation: 'contract-operation', candidates: [{ event: 1, block: 0 }], policy: { protectedTokens: 4000 } };
 const ORIGINAL = 'Filesystem evidence: α😀𠮷\n' + 'retained original tool content\n'.repeat(400);
@@ -143,8 +138,6 @@ export async function createContractHost({ directory, resumeId, persistence = tr
       ['sessionProjections', SessionProjectionRegistry], ['systemPrompt', SystemPrompt, {}],
       ['tools', ToolRuntime, { mode: 'native' }], ['agents', AgentRegistry],
       ['commands', Commands], ['sessionQuery', Query], ['tokenMeter', TokenMeter],
-      ['invariants', InvariantRegistry],
-      ...[sessionInvariant, agentInvariant, loopInvariant, commandsInvariant].map(companion => [companion.name, companion]),
       ...(persistence ? [['sessionPersistence', JsonlPersistence, { root: join(directory, 'sessions'), compression: 'none' }]] : []),
     ].map(([name, plugin, config]) => [name, ctx.plugin(plugin, config)]);
     await Promise.all(plugins.map(([name, fiber]) => stage(`startup/${name}`, () => fiber)));
