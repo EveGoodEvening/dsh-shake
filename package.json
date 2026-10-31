@@ -1,6 +1,6 @@
 {
   "name": "dsh-shake",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "适用于 DeepSeek Harness 的第三方持久化手动上下文减重 Host 插件",
   "license": "MIT",
   "repository": {
@@ -37,16 +37,16 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-agent-loop": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-commands": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-compaction": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-session": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-session-query": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-token-meter": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.5"
+    "@deepseek-ai/dsh-agent": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-agent-loop": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-commands": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-compaction": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-session": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-session-projection": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-session-query": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-token-meter": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2 <0.2.2-0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
