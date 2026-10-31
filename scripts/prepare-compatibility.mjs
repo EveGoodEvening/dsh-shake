@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFile, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
 
 const repoRoot = resolve(import.meta.dirname, '..');
@@ -55,6 +55,10 @@ for (const [index, manifest] of manifests.entries()) {
   if (index === 1) manifest.overrides = { ...manifest.overrides, ...cordisOverrides };
   await writeFile(resolve(workspace, manifestPaths[index]), `${JSON.stringify(manifest, null, 2)}\n`);
 }
+// The copied fixture lock pins the old family's exact peers; npm keeps those
+// entries and rejects the repinned manifest with ERESOLVE, a false upstream
+// failure. Resolve the repinned fixture fresh; its overrides live in package.json.
+await rm(resolve(workspace, '.verification/contracts/package-lock.json'), { force: true });
 // This isolated latest-upstream probe must accept freshly published versions.
 // Normal checkout/release installs retain the strict workspace cooldown.
 // pnpm 11 reads overrides from the workspace configuration, not package.json.

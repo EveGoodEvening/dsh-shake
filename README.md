@@ -16,7 +16,7 @@ A plugin for manually reducing context usage in **DeepSeek Harness (DSH)**. It r
 
 | Component | Declared support range | Verified baseline |
 | --- | --- | --- |
-| DeepSeek Harness (`@deepseek-ai/dsh` and the corresponding `@deepseek-ai/dsh-*` host services) | `0.2.1-rc.2` | `0.2.1-rc.2` |
+| DeepSeek Harness (`@deepseek-ai/dsh` and the corresponding `@deepseek-ai/dsh-*` host services) | `0.2.1-rc.5` | `0.2.1-rc.5` |
 | The Cordis fork used by DSH (`@deepseek-ai/cordis`) | `~4.0.5` (`>=4.0.5 <4.1.0`) | `4.0.5` |
 
 The supported host service versions are defined by `peerDependencies` in [package.json](package.json). Cordis refers to `@deepseek-ai/cordis`, not the unscoped `cordis` package. Compatibility outside the ranges above is not guaranteed.

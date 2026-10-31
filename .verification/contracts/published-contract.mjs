@@ -68,7 +68,7 @@ export async function installRecoveryCoexistence(host, { thresholdRatio = 0.99 }
   };
 }
 
-const VERSION = process.env.SHAKE_COMPAT_DSH_VERSION ?? '0.2.1-rc.2';
+const VERSION = process.env.SHAKE_COMPAT_DSH_VERSION ?? '0.2.1-rc.5';
 const CONTROL_KIND = 'published-contract-control';
 const CONTROL_SOURCE = { kind: CONTROL_KIND, schema: 1, operation: 'contract-operation', candidates: [{ event: 1, block: 0 }], policy: { protectedTokens: 4000 } };
 const ORIGINAL = 'Filesystem evidence: α😀𠮷\n' + 'retained original tool content\n'.repeat(400);
