@@ -1,7 +1,7 @@
 {
   "name": "dsh-shake",
-  "version": "0.0.4",
-  "description": "适用于 DeepSeek Harness 的第三方持久化手动上下文减重 Host 插件",
+  "version": "0.0.5",
+  "description": "Third-party DeepSeek Harness host plugin for persistent, manual context reduction",
   "license": "MIT",
   "repository": {
     "type": "git",

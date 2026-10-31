@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5 - 2026-10-31
+
+### 变更
+
+- 将 npm 包描述（`package.json` 的 `description`）改为英文：Third-party DeepSeek Harness host plugin for persistent, manual context reduction。功能与依赖无变化。
+
 ## 0.0.4 - 2026-10-31
 
 ### 变更
