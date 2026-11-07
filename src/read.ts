@@ -62,7 +62,7 @@ export async function readShakeText(services: ShakeReadServices, agent: Agent | 
   // A foreign origin is valid only inside a real inherited prefix. Parent metadata
   // alone is never authority; no query here ever follows a parent or sibling id.
   const inherited = ref.requestSeq < session.inheritedEventCount
-  if (inherited ? !session.header.isSeeded || !session.header.parentSession
+  if (inherited ? !session.header.isSeeded
     : request.sessionId !== session.id) return denied()
   const region = request.regions[ref.regionIndex]
   if (!region) return denied()

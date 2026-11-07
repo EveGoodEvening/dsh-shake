@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import type { ProjectionDefinition, SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import { Service, type Context } from '@deepseek-ai/cordis'
+import type { ProjectionDefinition, ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ShakeConfigSchema } from './config.js'
 
@@ -130,11 +131,6 @@ declare module '@deepseek-ai/dsh-llm/message' {
     'dsh-shake-excerpt': ShakeExcerpt
   }
 }
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    'dsh-shake': ShakeState
-  }
-}
 
 /** Invalid owned metadata throws rather than opening a modification path. */
 export function applyShakeEvent(state: ShakeState, event: SessionEvent): ShakeState {
@@ -151,17 +147,28 @@ export function applyShakeEvent(state: ShakeState, event: SessionEvent): ShakeSt
 }
 
 /** Host-only native fold: no custom subscriptions, wire view, original text or operation list. */
-export const shakeProjection: ProjectionDefinition<typeof SHAKE_PROJECTION_KEY> = {
+export const shakeProjection: ProjectionDefinition<typeof SHAKE_PROJECTION_KEY, ShakeState> = {
   key: SHAKE_PROJECTION_KEY, stateVersion: 1, stateSchema: ShakeStateSchema,
   init: header => ({ schemaVersion: 1, sessionId: header.id, current: null, lastResult: null }),
   apply: applyShakeEvent,
 }
-export function registerShakeProjection(registry: SessionProjectionRegistry): () => void {
-  return registry.register(shakeProjection)
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    shakeState: ShakeStateStore
+  }
 }
-/** Throws if lifecycle registration is absent; callers must not mutate the native projection. */
-export function readShakeState(registry: SessionProjectionRegistry, session: Session): ShakeState {
-  const state = registry.stateOf(session, SHAKE_PROJECTION_KEY)
-  if (!state) throw new Error('Shake projection is not registered')
-  return state
+
+/** Own the ready host-only handle; consumers never use the untyped registry lookup. */
+export class ShakeStateStore extends Service {
+  static inject = ['sessionProjections']
+  private projection!: ProjectionHandle<ShakeState>
+
+  constructor(ctx: Context) { super(ctx, 'shakeState') }
+
+  protected async [Service.init](): Promise<void> {
+    this.projection = await this.ctx.sessionProjections.register(shakeProjection)
+  }
+
+  /** Callers must not mutate the native projection value. */
+  stateOf(session: Session): ShakeState { return this.projection.stateOf(session) }
 }

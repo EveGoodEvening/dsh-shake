@@ -16,10 +16,12 @@ A plugin for manually reducing context usage in **DeepSeek Harness (DSH)**. It r
 
 | Component | Declared support range | Verified baseline |
 | --- | --- | --- |
-| DeepSeek Harness (`@deepseek-ai/dsh` and the corresponding `@deepseek-ai/dsh-*` host services) | `>=0.2.1-rc.2 <0.2.2-0` (0.2.1 prereleases from `rc.2`, and `0.2.1` itself) | `0.2.1-rc.5` |
-| The Cordis fork used by DSH (`@deepseek-ai/cordis`) | `~4.0.5` (`>=4.0.5 <4.1.0`) | `4.0.5` |
+| DeepSeek Harness (`@deepseek-ai/dsh` and the corresponding `@deepseek-ai/dsh-*` host services) | `>=0.2.2-rc.1 <0.2.3-0` (0.2.2 prereleases from `rc.1`, and `0.2.2` itself) | `0.2.2-rc.1` |
+| The Cordis fork used by DSH (`@deepseek-ai/cordis`) | `~4.1.0` (`>=4.1.0 <4.2.0`) | `4.1.0` |
 
 The supported host service versions are defined by `peerDependencies` in [package.json](package.json). Cordis refers to `@deepseek-ai/cordis`, not the unscoped `cordis` package. Compatibility outside the ranges above is not guaranteed.
+
+This compatibility line no longer supports DSH `0.2.1` or Cordis `4.0`. Development and public-host fixture dependencies are pinned to the verified baseline above.
 
 - **Node.js:** `^22.23.4 || ^24.22.1 || >=26.12.1`. CI pins `24.22.1`; use a patched runtime with its normal CA verification enabled. Development retains pnpm `11.7.0`, while publishing uses npm `12.2.1`.
 - **Environment:** An initialized DSH Web profile.
@@ -180,6 +182,7 @@ Uninstalling does not undo completed replacements or delete the original text. D
 
 - The package loads a single Host plugin through `dsh.bundle.patch`. The plugin manager adds the bundle to the profile's `dsh.profile.bundles`; the bundled patch explicitly supplies `config: {}` to enable defaults. The pinned host rejects plugin configurations that omit `config` entirely.
 - Tool results are replaced through the host's surface replacement mechanism. Identity, error, and provenance metadata, along with non-text blocks such as opaque/offload blocks, remain unchanged. The plugin does not delete images or reasoning blocks or reduce their cost.
+- The host-only state projection is registered asynchronously before command, tool, or pre-step entry points become available. Fork reads require evidence within the checked inherited event prefix, not a `parentSession` pointer.
 - Schema-v1 state stores only references, ranges, checksums, and frozen policies, without copying the original text. References use the format `shake:1:<operationId>:<requestSeq>:<regionIndex>`. Persisted ranges use half-open UTF-16 indices and UTF-16LE SHA-256 checksums; they cannot be used as pagination offsets for `shake_read`.
 - Only events known to the host are appended. Later compaction does not automatically erase the evidence needed to read original text from the raw log. State records, provenance checks, and reads incur additional logging or query costs.
 - To conservatively confirm persistence, every subsequent natural step runs `flush` first while the latest result in the same session remains `completed`. This is not a one-time retry.

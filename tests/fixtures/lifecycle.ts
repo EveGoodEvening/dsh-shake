@@ -11,7 +11,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import * as shake from '../../src/index.js'
 import { parseShakeConfig } from '../../src/config.js'
 import { partialRestart } from './recovery.js'
-import { readShakeState, formatShakeRef } from '../../src/state.js'
+import { formatShakeRef, shakeProjection } from '../../src/state.js'
 
 interface Host { ctx: Context; agent: Agent; requests: Message[][]; close(): Promise<void> }
 // Runtime URL preserves the isolated published consumer resolution boundary;
@@ -25,7 +25,7 @@ const fixture = await import(fixtureUrl) as {
 const policy = parseShakeConfig({ protectedTokens: 0 })
 const assistantText = 'Before\n```ts\n' + 'const retained = 123;\n'.repeat(800) + '```\nAfter'
 const signal = () => new AbortController().signal
-const state = (h: Host) => readShakeState(h.ctx.sessionProjections, h.agent.session)
+const state = (h: Host) => h.ctx.shakeState.stateOf(h.agent.session)
 const command = (h: Host, line = '/shake', s = signal()) => h.ctx.commands.execute(h.agent, line, [], s)
 function deferred() {
   let resolve!: () => void
@@ -138,7 +138,7 @@ export async function pendingUnloadReload() {
     await fixture.prepareToolHistory(h); const request = await schedule(h)
     const before = h.requests.length
     await fork.dispose(); absent(h)
-    const missing = await h.ctx.tools.execute({ callId: ToolCallId('unloaded-read'), name: 'shake_read', arguments: { ref: 'invalid' }, agent: h.agent, signal: signal() })
+    const missing = await h.ctx.tools.execute({ calls: [{ type: 'tool-call', id: ToolCallId('unloaded-read'), name: 'shake_read', arguments: JSON.stringify({ ref: 'invalid' }) }], agent: h.agent, signal: signal() }).then(batch => batch.results[0]!.result)
     assert.equal(missing.isError, true)
     assert.equal(h.requests.length, before)
     const id = h.agent.session.id
@@ -177,9 +177,7 @@ export async function activeUnload(kind: 'command' | 'execution' | 'read') {
     const before = h.requests.length
     const operation = kind === 'command' ? command(h).then(() => undefined, () => undefined)
       : kind === 'execution' ? natural(h)
-      : h.ctx.tools.execute({ callId: ToolCallId('unload-active-read'), name: 'shake_read',
-        arguments: { ref: formatShakeRef({ version: 1, operationId: request!.operationId, requestSeq: request!.requestSeq, regionIndex: 0 }), limit: 17 },
-        agent: h.agent, signal: signal() }).then(result => { assert.equal(result.isError, true) })
+      : h.ctx.tools.execute({ calls: [{ type: 'tool-call', id: ToolCallId('unload-active-read'), name: 'shake_read', arguments: JSON.stringify({ ref: formatShakeRef({ version: 1, operationId: request!.operationId, requestSeq: request!.requestSeq, regionIndex: 0 }), limit: 17 }) }], agent: h.agent, signal: signal() }).then(batch => batch.results[0]!.result).then(result => { assert.equal(result.isError, true) })
     await entered.promise
     if (kind === 'execution') {
       for (const line of ['/shake', '/shake', '/shake cancel']) {
@@ -247,19 +245,22 @@ export async function persistenceFailuresAndConflicts() {
       absent(durable)
     } finally { remove() }
     assert.equal(durable.requests.length, 2)
-    for (const conflict of ['command', 'tool'] as const) {
+    for (const conflict of ['projection', 'command', 'tool'] as const) {
       const host = await open({ sessionId: 'conflict-' + conflict })
-      const unregister = conflict === 'command'
-        ? host.ctx.commands.register({ name: 'shake', description: 'existing owner', handler: () => ({ kind: 'success', text: 'existing' }) })
-        : host.ctx.tools.register(defineTool({ name: 'shake_read', description: 'existing owner', parameters: {},
-          output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] }, execute: async () => 'existing' }))
+      const projection = conflict === 'projection'
+        ? await host.ctx.sessionProjections.register({ ...shakeProjection, stateVersion: 2 }) : undefined
+      const unregister = projection ? () => projection.dispose()
+        : conflict === 'command'
+          ? host.ctx.commands.register({ name: 'shake', description: 'existing owner', handler: () => ({ kind: 'success', text: 'existing' }) })
+          : host.ctx.tools.register(defineTool({ name: 'shake_read', description: 'existing owner', parameters: {},
+            output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] }, execute: async () => 'existing' }))
       const failed = host.ctx.plugin(shake, policy)
-      try { await assert.rejects(Promise.resolve(failed)) } finally { await failed.dispose(); unregister() }
+      try { await assert.rejects(Promise.resolve(failed)) } finally { await failed.dispose(); await unregister() }
       assert.equal(host.ctx.commands.find(host.agent, 'shake'), undefined)
       const clean = host.ctx.plugin(shake, policy); await clean; await clean.dispose(); absent(host)
     }
     return { missingPersistenceCommandRejected: true, failedFlushCommandRejected: true, disposalRejects: false,
-      unsupportedDiagnostics, flushDiagnostics, conflictsRejected: 2 }
+      unsupportedDiagnostics, flushDiagnostics, conflictsRejected: 3 }
   })
 }
 
@@ -310,8 +311,7 @@ export async function automaticCompaction() {
     const expected = Array.from(block.text.slice(region.start, region.end)).slice(0, 37).join('')
     const ref = formatShakeRef({ version: 1, operationId: request.operationId, requestSeq: request.requestSeq, regionIndex: 0 })
     const readPage = async (host: Host) => {
-      const outcome = await host.ctx.tools.execute({ callId: ToolCallId('automatic-compaction-read'), name: 'shake_read',
-        arguments: { ref, limit: 37 }, agent: host.agent, signal: signal() })
+      const outcome = await host.ctx.tools.execute({ calls: [{ type: 'tool-call', id: ToolCallId('automatic-compaction-read'), name: 'shake_read', arguments: JSON.stringify({ ref, limit: 37 }) }], agent: host.agent, signal: signal() }).then(batch => batch.results[0]!.result)
       assert.equal(outcome.isError, false)
       assert.ok(!outcome.isError)
       const page = outcome.value as { text: string }
@@ -366,9 +366,7 @@ export async function cancellationSignals() {
     const entered = deferred(), gate = deferred(), abort = new AbortController()
     const original = h.ctx.sessionQuery.readEvent.bind(h.ctx.sessionQuery)
     h.ctx.sessionQuery.readEvent = async (...args) => { entered.resolve(); await gate.promise; return original(...args) }
-    const operation = h.ctx.tools.execute({ callId: ToolCallId('caller-cancel-read'), name: 'shake_read',
-      arguments: { ref: formatShakeRef({ version: 1, operationId: request.operationId, requestSeq: request.requestSeq, regionIndex: 0 }) },
-      agent: h.agent, signal: abort.signal })
+    const operation = h.ctx.tools.execute({ calls: [{ type: 'tool-call', id: ToolCallId('caller-cancel-read'), name: 'shake_read', arguments: JSON.stringify({ ref: formatShakeRef({ version: 1, operationId: request.operationId, requestSeq: request.requestSeq, regionIndex: 0 }) }) }], agent: h.agent, signal: abort.signal }).then(batch => batch.results[0]!.result)
     await entered.promise; abort.abort(new Error('Tool caller cancels read')); gate.resolve()
     try { assert.equal((await operation).isError, true) } finally { h.ctx.sessionQuery.readEvent = original }
     return { uiCommandCancelled: true, agentMaintenanceCancelled: true, toolCallerCancelled: true }

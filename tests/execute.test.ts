@@ -7,7 +7,6 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import * as shake from '../src/index.js'
 import { parseShakeConfig } from '../src/config.js'
-import { readShakeState } from '../src/state.js'
 import { renderShakeMessage } from '../src/regions.js'
 import { executePendingShake } from '../src/execute.js'
 
@@ -38,7 +37,7 @@ async function schedule(host: Host) {
   if (!outcome) throw new Error('Missing shake command outcome')
   expect(outcome.result.kind).toBe('success')
   expect(host.requests.length).toBe(before)
-  const request = readShakeState(host.ctx.sessionProjections, host.agent.session).current
+  const request = host.ctx.shakeState.stateOf(host.agent.session).current
   expect(request).not.toBeNull()
   if (!request) throw new Error('Missing pending request')
   return request
@@ -85,7 +84,7 @@ describe('durable replacements in the real next request', () => {
     expect(excerpt?.content).toEqual([{ type: 'text', text:
       '[Historical assistant excerpt; removed text is available through shake_read.]\nbefore\n'
       + `[Removed text; shake_read ref="shake:1:${request.operationId}:${request.requestSeq}:1"]\nafter` }])
-    const state = readShakeState(host.ctx.sessionProjections, host.agent.session)
+    const state = host.ctx.shakeState.stateOf(host.agent.session)
     expect(state.current).toBeNull()
     expect(state.lastResult).toMatchObject({ status: 'completed', removedRegions: request.regions.length, skippedRegions: 0 })
     expect(state.lastResult!.estimatedTokensSaved).toBeGreaterThan(0)
@@ -108,7 +107,7 @@ describe('durable replacements in the real next request', () => {
     try { await followup(host) } finally { remove() }
     const sent = host.requests.at(-1)!
     expect(sent.find(message => message.role === 'tool')?.content).toEqual([{ type: 'text', text: 'Other operation’s retained result' }])
-    expect(readShakeState(host.ctx.sessionProjections, host.agent.session).lastResult).toMatchObject({
+    expect(host.ctx.shakeState.stateOf(host.agent.session).lastResult).toMatchObject({
       status: 'completed', removedRegions: request.regions.length - 1, skippedRegions: 1,
     })
     expect((await host.ctx.sessionQuery.traceEvent({ sessionId: host.agent.session.id, seq: original.seq })).replacedBy).toBe(replacementSeq)
@@ -140,7 +139,7 @@ describe('durable replacements in the real next request', () => {
     const replacements = log.events.filter(event => event.type === 'tool/result'
       && event.sourceEventSeqs?.some(seq => Number(seq) === request.requestSeq))
     expect(replacements.map(event => Number(event.seq))).toEqual([landedSeq])
-    expect(readShakeState(host.ctx.sessionProjections, host.agent.session).lastResult).toMatchObject({
+    expect(host.ctx.shakeState.stateOf(host.agent.session).lastResult).toMatchObject({
       status: 'completed', removedRegions: request.regions.length, skippedRegions: 0,
     })
   }, 30000)
@@ -153,12 +152,12 @@ describe('durable replacements in the real next request', () => {
     const remove = host.ctx.on('session/flush', () => { throw expectedError })
     try { await followup(host, expectedError) } finally { remove() }
     expect(host.requests.length).toBe(before)
-    const state = readShakeState(host.ctx.sessionProjections, host.agent.session)
+    const state = host.ctx.shakeState.stateOf(host.agent.session)
     expect(state.current).not.toBeNull()
     expect(state.lastResult).toMatchObject({ status: 'failed', removedRegions: 0 })
   }, 30000)
 
-  it('reduces the public pressure projection when replacing an occupied assistant message', async () => {
+  it('reduces metered request pressure when replacing an occupied assistant message', async () => {
     const { host } = await history(true)
     const surface = await host.ctx.sessionQuery.readSurface(host.agent.session.id)
     const assistant = surface.events.find(event => event.type === 'assistant/message'
@@ -172,10 +171,9 @@ describe('durable replacements in the real next request', () => {
     await schedule(host)
     const prices: { removed: number, occupied: number }[] = []
     const remove = host.ctx.on('session/flush', () => {
-      const state = readShakeState(host.ctx.sessionProjections, host.agent.session)
-      const pressure = host.ctx.sessionProjections.stateOf(host.agent.session, 'contextPressure')!
+      const state = host.ctx.shakeState.stateOf(host.agent.session)
       if (state.lastResult?.status === 'executing') prices.push({ removed: state.lastResult.removedRegions,
-        occupied: pressure.pressureTokens! + pressure.surfaceTokens - pressure.sampledSurfaceTokens! })
+        occupied: host.ctx.tokenMeter.measure(host.agent.session).totalTokens })
     })
     try { await followup(host) } finally { remove() }
     expect(prices.map(price => price.removed)).toEqual([0, 1, 2])
@@ -200,7 +198,7 @@ describe('durable replacements in the real next request', () => {
     const held = new Promise<void>((_resolve, fail) => { reject = fail })
     let intercepted = false
     const remove = host.ctx.on('session/flush', session => {
-      const state = readShakeState(host.ctx.sessionProjections, host.agent.session)
+      const state = host.ctx.shakeState.stateOf(host.agent.session)
       if (session === host.agent.session && !intercepted
         && state.lastResult?.operationId === request.operationId
         && state.lastResult.requestSeq === request.requestSeq
@@ -215,7 +213,7 @@ describe('durable replacements in the real next request', () => {
     const intercept = host.ctx.on('agent/pre-step', async (payload, next) => {
       if (payload.agent !== host.agent) return next()
       expect(payload.step).toBe(1)
-      expect(host.ctx.sessionProjections.stateOf(host.agent.session, 'turnBoundary')!.lastTurn).toBe(payload.turn)
+      expect(host.ctx.agents.turnBoundaryOf(host.agent.session).lastTurn).toBe(payload.turn)
       try { await executePendingShake(host.ctx, payload.agent, payload.signal) }
       catch (error) { settle(error); return { kind: 'reject' } }
       throw new Error('Expected canceled checkpoint rejection')
@@ -234,7 +232,7 @@ describe('durable replacements in the real next request', () => {
     expect((await host.ctx.sessionQuery.readSession(host.agent.session.id)).events.at(-1))
       .toMatchObject({ type: 'turn/end', data: { reason: { kind: 'aborted', reason: { kind: 'user' } } } })
     expect(host.requests.length).toBe(before)
-    const state = readShakeState(host.ctx.sessionProjections, host.agent.session)
+    const state = host.ctx.shakeState.stateOf(host.agent.session)
     expect(state.lastResult?.status).toBe('completed')
     expect(state.current === null).toBe(clear)
     if (clear) {
@@ -245,6 +243,6 @@ describe('durable replacements in the real next request', () => {
     }
     await followup(host)
     expect(host.requests.length).toBe(before + 1)
-    expect(readShakeState(host.ctx.sessionProjections, host.agent.session).current).toBeNull()
+    expect(host.ctx.shakeState.stateOf(host.agent.session).current).toBeNull()
   }, 30000)
 })

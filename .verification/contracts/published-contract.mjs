@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis';
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session';
 import AgentLoop from '@deepseek-ai/dsh-agent-loop';
 import Commands from '@deepseek-ai/dsh-commands';
-import Query from '@deepseek-ai/dsh-session-query';
+import Query from '@deepseek-ai/dsh-session-query-sqlite';
 import TokenMeter from '@deepseek-ai/dsh-token-meter';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import AgentRegistry from '@deepseek-ai/dsh-agent';
@@ -17,6 +17,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm';
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native';
 import { installLlmReplay } from '@deepseek-ai/dsh-llm-replay';
 import * as JsonlPersistence from '@deepseek-ai/dsh-session-persistence-jsonl';
 import { z } from 'zod';
@@ -29,8 +30,10 @@ class ContractTemplateCompaction extends BasicCompactionEngine {
   async summarize(input, agent, signal) {
     signal?.throwIfAborted();
     const roles = input.messages.map(message => message.role).join(', ');
+    const selection = agent.model.current();
+    assert.ok(selection, 'compaction requires the agent’s current model selection');
     return { summary: [{ type: 'text', text: `Prior conversation roles: ${roles}. Filesystem evidence was inspected.` }],
-      provider: agent.options.provider, model: agent.options.model };
+      provider: selection.provider, model: selection.model };
   }
 }
 export async function installRecoveryCoexistence(host, { thresholdRatio = 0.99 } = {}) {
@@ -68,7 +71,7 @@ export async function installRecoveryCoexistence(host, { thresholdRatio = 0.99 }
   };
 }
 
-const VERSION = process.env.SHAKE_COMPAT_DSH_VERSION ?? '0.2.1-rc.5';
+const VERSION = process.env.SHAKE_COMPAT_DSH_VERSION ?? '0.2.2-rc.1';
 const CONTROL_KIND = 'published-contract-control';
 const CONTROL_SOURCE = { kind: CONTROL_KIND, schema: 1, operation: 'contract-operation', candidates: [{ event: 1, block: 0 }], policy: { protectedTokens: 4000 } };
 const ORIGINAL = 'Filesystem evidence: α😀𠮷\n' + 'retained original tool content\n'.repeat(400);
@@ -136,8 +139,8 @@ export async function createContractHost({ directory, resumeId, persistence = tr
     const plugins = [
       ['llm', LlmRuntime], ['sessions', SessionStore],
       ['sessionProjections', SessionProjectionRegistry], ['systemPrompt', SystemPrompt, {}],
-      ['tools', ToolRuntime, { mode: 'native' }], ['agents', AgentRegistry],
-      ['commands', Commands], ['sessionQuery', Query], ['tokenMeter', TokenMeter],
+      ['tools', ToolRuntime], ['nativeToolExecutor', NativeToolExecutor], ['agents', AgentRegistry],
+      ['commands', Commands], ['sessionQuery', Query, { path: ':memory:' }], ['tokenMeter', TokenMeter],
       ...(persistence ? [['sessionPersistence', JsonlPersistence, { root: join(directory, 'sessions'), compression: 'none' }]] : []),
     ].map(([name, plugin, config]) => [name, ctx.plugin(plugin, config)]);
     await Promise.all(plugins.map(([name, fiber]) => stage(`startup/${name}`, () => fiber)));
@@ -163,20 +166,20 @@ export async function createContractHost({ directory, resumeId, persistence = tr
       providers: [{ id: 'contract-replay', models: [{ id: 'contract-model', contextWindow: 131072 }] }],
     });
     const requests = [];
-    ctx.on('llm/stream', (options, next) => {
+    ctx.on('llm/stream', async function* (options, next) {
       requests.push(structuredClone(options.messages));
       const live = ctx.agents.get(options.sessionId);
       assert.ok(live, 'model request must belong to the published live agent');
       assert.deepEqual(options.messages, live.session.deriveMessages(), 'request must be exactly log-derived');
-      return next();
+      yield* next();
     }, { prepend: true });
-    ctx.sessionProjections.register({
+    const projection = await stage('startup/contractProjection', () => ctx.sessionProjections.register({
       key: 'published-contract', stateVersion: 1,
       stateSchema: z.object({ source: z.unknown().nullable(), eventSeq: z.number().nullable() }),
       init: () => ({ source: null, eventSeq: null }),
       apply: (state, event) => event.type === 'user/message' && event.data.source.kind === CONTROL_KIND
         ? { source: event.data.source, eventSeq: event.seq } : state,
-    });
+    }));
     await stage('startup/agentLoop', () => ctx.plugin(AgentLoop, { agents: [] }));
     const agentOptions = { provider: 'contract-replay', model: 'contract-model' };
     handle = await stage(resumeId ? 'agent/resume' : 'agent/create', () => resumeId
@@ -185,7 +188,7 @@ export async function createContractHost({ directory, resumeId, persistence = tr
         ...(seed ? { isSeeded: true, parentSession: SessionId(parentSessionId) } : {}) },
         ...(seed ? { seed, inheritedEventCount: seed.length } : {}), agentOptions }));
     return {
-      ctx, agent: handle.agent, replay, requests, directory,
+      ctx, agent: handle.agent, replay, requests, directory, projection,
       close,
     };
   } catch (error) {
@@ -243,7 +246,7 @@ async function probe() {
       assert.equal(execution.result.sourceEventSeq, control.seq);
       assert.equal(host.requests.length, requestsBeforeCommand, 'command must not invoke model');
       assert.deepEqual(agent.session.deriveMessages().slice(0, derivedBeforeCommand.length), derivedBeforeCommand);
-      assert.deepEqual(ctx.sessionProjections.stateOf(agent.session, 'published-contract'), { source: CONTROL_SOURCE, eventSeq: control.seq });
+      assert.deepEqual(host.projection.stateOf(agent.session), { source: CONTROL_SOURCE, eventSeq: control.seq });
     });
     await stage('maintenance/exclusivity', async () => {
       let release;
@@ -305,7 +308,7 @@ async function probe() {
     const originalIdentity = { ...original.data.message }; delete originalIdentity.content;
     assert.deepEqual(changedIdentity, originalIdentity, 'only tool content may change');
     const derived = agent.session.deriveMessages();
-    const projected = structuredClone(ctx.sessionProjections.stateOf(agent.session, 'published-contract'));
+    const projected = structuredClone(host.projection.stateOf(agent.session));
     const measurement = ctx.tokenMeter.measure(agent.session);
     assert.ok(ctx.tokenMeter.estimateMessage(replacement.data.message) < ctx.tokenMeter.estimateMessage(original.data.message));
     assert.ok(measurement.surfaceTokens < measuredBefore.surfaceTokens, 'large tool rewrite must reduce actual metered surface despite new turn messages');
@@ -317,7 +320,7 @@ async function probe() {
     await host.close(); host = undefined;
     reopened = await createContractHost({ directory, resumeId: 'published-contract-session' });
     assert.deepEqual(reopened.agent.session.deriveMessages(), derived, 'JSONL teardown/reopen must preserve derived history');
-    assert.deepEqual(reopened.ctx.sessionProjections.stateOf(reopened.agent.session, 'published-contract'), projected, 'host-only state must rebuild from persisted log');
+    assert.deepEqual(reopened.projection.stateOf(reopened.agent.session), projected, 'host-only state must rebuild from persisted log');
     const restoredControl = (await reopened.ctx.sessionQuery.readEvent({ sessionId: reopened.agent.session.id, seq: control.seq })).target;
     assert.deepEqual(restoredControl.data.source, CONTROL_SOURCE, 'custom source metadata must survive persistence');
     assert.deepEqual((await reopened.ctx.sessionQuery.readEvent({ sessionId: reopened.agent.session.id, seq: original.seq })).target, original);

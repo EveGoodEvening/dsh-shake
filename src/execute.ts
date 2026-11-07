@@ -4,13 +4,13 @@ import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-a
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import { renderShakeMessage, type IndexedShakeRegion } from './regions.js'
-import { readShakeState, ShakeControlSchema, type ShakeResult } from './state.js'
+import { ShakeControlSchema, type ShakeResult } from './state.js'
 import { ShakeLifecycle } from './lifecycle.js'
 
 /** Runs only within the host's natural turn, before its request is assembled. */
 export async function executePendingShake(ctx: Context, agent: Agent, signal: AbortSignal, lifecycle?: ShakeLifecycle): Promise<void> {
   const session = agent.session
-  const state = readShakeState(ctx.sessionProjections, session)
+  const state = ctx.shakeState.stateOf(session)
   const request = state.current
   if (!request) {
     // A terminal clear can be visible before its flush resolves. Retry that
