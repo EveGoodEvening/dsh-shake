@@ -5,7 +5,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ShakeConfig } from './config.js'
 import { planShakeRegions } from './regions.js'
-import { readShakeState, ShakeControlSchema, ShakeRequestSchema } from './state.js'
+import { ShakeControlSchema, ShakeRequestSchema } from './state.js'
 import { ShakeLifecycle } from './lifecycle.js'
 
 const BUSY = '会话忙碌，请空闲后重试。'
@@ -38,11 +38,11 @@ export function registerShakeCommand(ctx: Context, policy: ShakeConfig, lifecycl
           }
           check()
           // A resumed interrupted turn can expose idle status without stable idle history.
-          const boundary = ctx.sessionProjections.stateOf(session, 'turnBoundary')
-          if (boundary?.openTurnStartSeq !== null && boundary?.openTurnStartSeq !== undefined) {
+          const boundary = ctx.agents.turnBoundaryOf(session)
+          if (boundary.openTurnStartSeq !== null) {
             return { kind: 'error', text: BUSY }
           }
-          const state = readShakeState(ctx.sessionProjections, session)
+          const state = ctx.shakeState.stateOf(session)
           if (input === 'cancel') {
             if (!state.current) return { kind: 'success', text: '没有待执行的清理请求；不会恢复已完成的替换。' }
             if (state.lastResult?.operationId === state.current.operationId) {

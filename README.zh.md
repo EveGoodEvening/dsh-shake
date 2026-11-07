@@ -16,10 +16,12 @@
 
 | 组件 | 声明支持范围 | 已验证基线 |
 | --- | --- | --- |
-| DeepSeek Harness（`@deepseek-ai/dsh` 及对应的 `@deepseek-ai/dsh-*` 宿主服务） | `>=0.2.1-rc.2 <0.2.2-0`（`rc.2` 起的 0.2.1 预发布版及 `0.2.1` 正式版） | `0.2.1-rc.5` |
-| DSH 使用的 Cordis fork（`@deepseek-ai/cordis`） | `~4.0.5`（`>=4.0.5 <4.1.0`） | `4.0.5` |
+| DeepSeek Harness（`@deepseek-ai/dsh` 及对应的 `@deepseek-ai/dsh-*` 宿主服务） | `>=0.2.2-rc.1 <0.2.3-0`（`rc.1` 起的 0.2.2 预发布版及 `0.2.2` 正式版） | `0.2.2-rc.1` |
+| DSH 使用的 Cordis fork（`@deepseek-ai/cordis`） | `~4.1.0`（`>=4.1.0 <4.2.0`） | `4.1.0` |
 
 宿主服务的支持范围以 [package.json](package.json) 的 `peerDependencies` 为准。Cordis 指 `@deepseek-ai/cordis`，不是未加 scope 的 `cordis` 包；不承诺上述范围以外的版本兼容。
+
+此兼容性分支不再支持 DSH `0.2.1` 或 Cordis `4.0`。开发依赖与公开宿主验证夹具精确固定到上述已验证基线。
 
 - **Node.js：** `^22.23.4 || ^24.22.1 || >=26.12.1`。CI 固定使用 `24.22.1`，请使用已修补的运行时并保留正常 CA 校验。开发仍使用 pnpm `11.7.0`，发布使用 npm `12.2.1`。
 - **使用环境：** 已初始化的 DSH Web profile。
@@ -180,6 +182,7 @@ dsh web
 
 - 安装包通过 `dsh.bundle.patch` 加载单个 Host 插件。插件管理器将组合包加入 profile 的 `dsh.profile.bundles`；随包 patch 显式提供 `config: {}` 以启用默认值。固定宿主会拒绝省略整个 `config` 的插件配置。
 - 工具结果通过宿主的 surface replacement 替换，身份、错误、来源元数据及 opaque/offload 等非文本块保持不变。插件不删除图片或推理块，也不缩减它们的成本。
+- 仅宿主可见的状态投影完成异步注册后，才开放命令、工具与 pre-step 入口。分叉回读必须在已核验的继承事件前缀内拥有完整凭据，不依赖 `parentSession` 指针。
 - schema-v1 状态只保存引用、范围、校验和与冻结策略，不复制原文。引用格式为 `shake:1:<operationId>:<requestSeq>:<regionIndex>`；持久化范围采用半开 UTF-16 索引和 UTF-16LE SHA-256 校验，不能用作 `shake_read` 的分页偏移。
 - 只追加宿主已知事件；后续 compaction 不会自动抹掉原始日志中的回读凭据。状态记录、来源核验和回读都有额外日志或查询成本。
 - 为保守确认持久化，同会话最近结果仍为 `completed` 时，每个后续自然 step 都先执行 `flush`，并非只重试一次。

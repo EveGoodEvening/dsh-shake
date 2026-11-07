@@ -6,7 +6,7 @@ import { buildForkSeed, SessionId, SessionLogOffset, SessionSeq, type SessionEve
 import { setTimeout as delay } from 'node:timers/promises'
 import * as shake from '../src/index.js'
 import { parseShakeConfig } from '../src/config.js'
-import { formatShakeRef, readShakeState, type ShakeRequest } from '../src/state.js'
+import { formatShakeRef, type ShakeRequest } from '../src/state.js'
 import { readShakeText, type ShakeReadArgs, type ShakeReadServices } from '../src/read.js'
 import { executePendingShake } from '../src/execute.js'
 
@@ -32,7 +32,7 @@ async function history() {
   const outcome = await host.ctx.commands.execute(host.agent, '/shake', [], signal())
   expect(outcome?.result.kind).toBe('success')
   expect(host.requests.length).toBe(before)
-  const request = readShakeState(host.ctx.sessionProjections, host.agent.session).current!
+  const request = host.ctx.shakeState.stateOf(host.agent.session).current!
   return { host, original, request, ref: refFor(request) }
 }
 async function land(host: Host) {
@@ -45,7 +45,11 @@ async function land(host: Host) {
   } finally { remove() }
 }
 async function dispatch(host: Host, args: unknown, agent = host.agent, abortSignal = signal()) {
-  return host.ctx.tools.execute({ callId: ToolCallId('read-validation'), name: 'shake_read', arguments: args, agent, signal: abortSignal })
+  const batch = await host.ctx.tools.execute({
+    calls: [{ type: 'tool-call', id: ToolCallId('read-validation'), name: 'shake_read', arguments: JSON.stringify(args) }],
+    agent, signal: abortSignal,
+  })
+  return batch.results[0]!.result
 }
 function read(host: Host, args: ShakeReadArgs, services: ShakeReadServices = host.ctx, abortSignal = signal()) {
   return readShakeText(services, host.agent, args, abortSignal, policy)
@@ -53,7 +57,7 @@ function read(host: Host, args: ShakeReadArgs, services: ShakeReadServices = hos
 async function child(host: Host, name: string, boundary?: number) {
   const events = boundary === undefined ? [] : (await host.ctx.sessionQuery.readSession(host.agent.session.id)).events
   const handle = await host.ctx.agents.create({ sessionId: SessionId(name),
-    meta: { parentSession: host.agent.session.id, isSeeded: boundary !== undefined },
+    meta: boundary === undefined ? { parentSession: host.agent.session.id } : { isSeeded: true },
     ...(boundary === undefined ? {} : { seed: buildForkSeed(events, SessionSeq(boundary)), inheritedEventCount: SessionLogOffset(boundary + 1) }),
     agentOptions: { provider: 'contract-replay', model: 'contract-model' },
   })
@@ -119,6 +123,7 @@ describe('shake_read authorization and code-point pagination', () => {
     const metadataOnly = await child(host, 'read-parent-pointer-only')
     expect((await dispatch(host, { ref }, metadataOnly)).isError).toBe(true)
     const fork = await child(host, 'read-landed-fork', host.agent.session.seq - 1)
+    expect(fork.session.header.parentSession).toBeUndefined()
     const parent = await read(host, { ref, limit: 17 })
     const result = await dispatch(host, { ref, limit: 17 }, fork)
     expect(result.isError).toBe(false)
@@ -137,7 +142,7 @@ describe('shake_read authorization and code-point pagination', () => {
       lastResult: { operationId: 'later-operation', sessionId: host.agent.session.id, requestSeq: seq - 1,
         status: 'cancelled', removedRegions: 0, skippedRegions: 0, estimatedTokensSaved: 0 },
     } }), { surfaceOp: 'append' })
-    expect(readShakeState(host.ctx.sessionProjections, host.agent.session).lastResult?.operationId).toBe('later-operation')
+    expect(host.ctx.shakeState.stateOf(host.agent.session).lastResult?.operationId).toBe('later-operation')
     expect(await read(host, { ref, limit: 9 })).toEqual(older)
     const query = host.ctx.sessionQuery
     const services = (alter: (event: SessionEvent) => SessionEvent): ShakeReadServices => ({ tokenMeter: host.ctx.tokenMeter,
@@ -179,7 +184,7 @@ describe('shake_read authorization and code-point pagination', () => {
     const reason = new Error('Stop after first real replacement')
     let executionError: unknown
     const stop = host.ctx.on('session/flush', session => {
-      const result = readShakeState(host.ctx.sessionProjections, session).lastResult
+      const result = host.ctx.shakeState.stateOf(session).lastResult
       if (session === host.agent.session && result?.operationId === request.operationId && result.removedRegions === 1) abort.abort(reason)
     })
     const intercept = host.ctx.on('agent/pre-step', async (payload, next) => {

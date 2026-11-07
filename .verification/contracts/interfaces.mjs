@@ -86,16 +86,15 @@ export async function runInterfaces({ ctx, agent, evidence = [] }) {
       apply: (state, event) => event.type === 'user/message' && event.data.source.kind === 'contract-control'
         ? schema.parse({ status: event.data.source.status, requestSeq: event.data.source.requestSeq }) : state,
     }
-    disposers.push(ctx.sessionProjections.register(definition))
-    assert.throws(() => ctx.sessionProjections.register({ ...definition, stateVersion: 2 }))
-    assert.throws(() => ctx.sessionProjections.register({ ...definition, key: 'invalid-version', stateVersion: -1 }))
+    const projection = await ctx.sessionProjections.register(definition)
+    disposers.push(() => projection.dispose())
+    await assert.rejects(async () => ctx.sessionProjections.register({ ...definition, stateVersion: 2 }))
+    await assert.rejects(async () => ctx.sessionProjections.register({ ...definition, key: 'invalid-version', stateVersion: -1 }))
     const requestSeq = SessionSeq(session.seq)
     const control = session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'contract request pending' }], source: { kind: 'contract-control', status: 'pending', requestSeq } }), { surfaceOp: 'append' })
-    assert.deepEqual(ctx.sessionProjections.stateOf(session, key), { status: 'pending', requestSeq })
+    assert.deepEqual(projection.stateOf(session), { status: 'pending', requestSeq })
     assert.equal(Object.hasOwn(ctx.sessionProjections.snapshot(session).values, key), false)
     assert.equal(ctx.sessionProjections.checkpoint(session)[key].ver, 1)
-    const stateReference = ctx.sessionProjections.stateOf(session, key)
-    assert.equal(definition.apply(stateReference, { type: 'command/done' }), stateReference)
 
     const surfaceBefore = await query.readSurface(session.id)
     const target = surfaceBefore.events.find(e => e.type === 'tool/result' && e.data.message.isError !== true && toolPairingBalancedAfter(session, e.seq))
@@ -161,7 +160,7 @@ export async function runInterfaces({ ctx, agent, evidence = [] }) {
     record('pre-step-prune-identity-provenance', { order, original: originalWindow.target, replacement, trace, originalTrace, measurement: ctx.tokenMeter.measure(session) })
 
     session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'contract request cancelled' }], source: { kind: 'contract-control', status: 'cancelled', requestSeq } }), { surfaceOp: 'append' })
-    assert.deepEqual(ctx.sessionProjections.stateOf(session, key), { status: 'cancelled', requestSeq })
+    assert.deepEqual(projection.stateOf(session), { status: 'cancelled', requestSeq })
     assert.equal(await ctx.sessions.flush(session), true)
     record('projection-cancel-state', ctx.sessionProjections.checkpoint(session)[key])
     // Query is an unrestricted host reader, not an authorization service.
@@ -169,14 +168,13 @@ export async function runInterfaces({ ctx, agent, evidence = [] }) {
     // can authorize a recovery reference. Guessing a seq still reads raw data.
     record('trace-is-provenance-not-authorization', { readableOriginalSeq: (await query.readEvent({ sessionId: session.id, seq: target.seq })).target.seq })
     return evidence
-  } finally { for (const dispose of disposers.reverse()) dispose() }
+  } finally { for (const dispose of disposers.reverse()) await dispose() }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { createContractHost, prepareToolHistory } = await import('./published-contract.mjs')
   const host = await createContractHost()
   try {
-    assert.equal(typeof prepareToolHistory, 'function', 'Host module must export prepareToolHistory for standalone execution')
     await prepareToolHistory(host)
     console.log(JSON.stringify(await runInterfaces(host), null, 2))
   } finally { await host.close() }

@@ -5,9 +5,9 @@ import Commands from '@deepseek-ai/dsh-commands'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import Query, { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import Meter from '@deepseek-ai/dsh-token-meter'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import Agents, { AgentModel, modelSelectionProjectionDefinition, type Agent } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
-import { registerShakeProjection, readShakeState } from '../src/state.js'
+import { ShakeStateStore } from '../src/state.js'
 import { registerShakeCommand } from '../src/commands.js'
 import { parseShakeConfig } from '../src/config.js'
 
@@ -23,15 +23,17 @@ class CommandTestQuery extends Query {
 
 async function fixture() {
   const ctx = new Context()
-  const plugins = [ctx.plugin(SessionStore), ctx.plugin(Commands), ctx.plugin(Projections), ctx.plugin(CommandTestQuery), ctx.plugin(Meter)]
+  const plugins = [ctx.plugin(SessionStore), ctx.plugin(Commands), ctx.plugin(Projections),
+    ctx.plugin(Agents), ctx.plugin(CommandTestQuery), ctx.plugin(Meter), ctx.plugin(ShakeStateStore)]
   await Promise.all(plugins)
   const session = ctx.sessions.create(SessionId('commands-test'))
-  registerShakeProjection(ctx.sessionProjections)
+  const modelSelection = await ctx.sessionProjections.register(modelSelectionProjectionDefinition)
   registerShakeCommand(ctx, parseShakeConfig({ protectedTokens: 0 }))
   let occupied = false
   let running = false
   const agent: Agent = {
     id: session.id, session, ctx, options: {},
+    model: new AgentModel(modelSelection.readerFor(session), session, {}),
     get status() { return running ? 'running' : 'idle' },
     inbox: { nextTurn: [], nextStep: [], splice() { return [] }, clear() {}, append() {}, prepend() {}, replace() { return false }, remove() { return false } },
     async runMaintenance(task) {
@@ -65,7 +67,7 @@ describe('durable command admission', () => {
       expect((await f.execute('/shake extra'))?.result.kind).toBe('error')
       expect((await f.execute('/shake cancel extra'))?.result.kind).toBe('error')
       expect((await f.execute('/shake'))?.result).toEqual({ kind: 'success', text: '无需清理。' })
-      expect(readShakeState(f.ctx.sessionProjections, f.session).current).toBeNull()
+      expect(f.ctx.shakeState.stateOf(f.session).current).toBeNull()
       const attachment = await f.ctx.commands.execute(f.agent, '/shake', [{ type: 'file', receiptId: 'forbidden' }], new AbortController().signal)
       expect(attachment?.result.kind).toBe('error')
     } finally { await f.ctx.fiber.dispose() }
@@ -81,7 +83,7 @@ describe('durable command admission', () => {
       const admission = f.execute('/shake').then(value => { settled = true; return value })
       await vi.waitFor(() => expect(flush).toHaveBeenCalledTimes(1))
       expect(settled).toBe(false)
-      const pending = readShakeState(f.ctx.sessionProjections, f.session).current!
+      const pending = f.ctx.shakeState.stateOf(f.session).current!
       expect(pending.cutoffSeq).toBeLessThan(pending.requestSeq)
       expect(pending.regions[0]?.eventSeq).toBe(original.seq)
       expect(pending.policy.protectedTokens).toBe(0)
@@ -91,9 +93,9 @@ describe('durable command admission', () => {
       expect(accepted?.result.kind).toBe('success')
       if (accepted?.result.kind === 'success') expect(Number(accepted.result.sourceEventSeq)).toBe(pending.requestSeq)
       expect((await f.execute('/shake'))?.result.kind).toBe('error')
-      expect(readShakeState(f.ctx.sessionProjections, f.session).current).toEqual(pending)
+      expect(f.ctx.shakeState.stateOf(f.session).current).toEqual(pending)
       expect((await f.execute('/shake cancel'))?.result.kind).toBe('success')
-      const cancelled = readShakeState(f.ctx.sessionProjections, f.session)
+      const cancelled = f.ctx.shakeState.stateOf(f.session)
       expect(cancelled.current).toBeNull()
       expect(cancelled.lastResult?.status).toBe('cancelled')
       expect(f.session.deriveEventMessage(original)).toEqual(original.data.message)
@@ -109,10 +111,10 @@ describe('durable command admission', () => {
       expect((await f.execute('/shake'))?.result).toEqual({ kind: 'error',
         text: failure instanceof Error ? failure.message : '无法确认持久化：没有会话保存监听器。' })
       // Append is not a transaction: retain the unconfirmed request, never pretend rollback.
-      expect(readShakeState(f.ctx.sessionProjections, f.session).current?.regions[0]?.eventSeq).toBeDefined()
+      expect(f.ctx.shakeState.stateOf(f.session).current?.regions[0]?.eventSeq).toBeDefined()
       expect((await f.execute('/shake cancel'))?.result).toEqual({ kind: 'error',
         text: failure instanceof Error ? failure.message : '无法确认持久化：没有会话保存监听器。' })
-      expect(readShakeState(f.ctx.sessionProjections, f.session).current).toBeNull()
+      expect(f.ctx.shakeState.stateOf(f.session).current).toBeNull()
     } finally { await f.ctx.fiber.dispose() }
   })
   it('rejects busy admission and cancellation without planning or changes', async () => {
@@ -123,7 +125,7 @@ describe('durable command admission', () => {
       expect((await f.execute('/shake'))?.result.kind).toBe('error')
       expect((await f.execute('/shake cancel'))?.result.kind).toBe('error')
       expect(read).not.toHaveBeenCalled()
-      expect(readShakeState(f.ctx.sessionProjections, f.session).current).toBeNull()
+      expect(f.ctx.shakeState.stateOf(f.session).current).toBeNull()
     } finally { await f.ctx.fiber.dispose() }
   })
 })

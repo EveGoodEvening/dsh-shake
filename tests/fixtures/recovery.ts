@@ -9,7 +9,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import * as shake from '../../src/index.js'
 import { parseShakeConfig } from '../../src/config.js'
-import { readShakeState, formatShakeRef } from '../../src/state.js'
+import { formatShakeRef } from '../../src/state.js'
 import type { ShakeRequest } from '../../src/state.js'
 import { readShakeText } from '../../src/read.js'
 
@@ -26,7 +26,7 @@ const fixture = await import(fixtureUrl) as {
 }
 const policy = parseShakeConfig({ protectedTokens: 0 })
 const assistantText = 'Retained before\n```ts\n' + 'const evidence = 123;\n'.repeat(800) + '```\nRetained after'
-const state = (host: Host) => readShakeState(host.ctx.sessionProjections, host.agent.session)
+const state = (host: Host) => host.ctx.shakeState.stateOf(host.agent.session)
 const log = (host: Host) => host.ctx.sessionQuery.readSession(host.agent.session.id)
 async function attach(host: Host) { await host.ctx.plugin(shake, policy); return host }
 async function schedule(host: Host) {
