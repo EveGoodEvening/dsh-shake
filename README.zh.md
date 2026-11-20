@@ -16,7 +16,7 @@
 
 | 组件 | 声明支持范围 | 已验证基线 |
 | --- | --- | --- |
-| DeepSeek Harness（`@deepseek-ai/dsh` 及对应的 `@deepseek-ai/dsh-*` 宿主服务） | `>=0.2.2-rc.1 <0.2.3-0`（`rc.1` 起的 0.2.2 预发布版及 `0.2.2` 正式版） | `0.2.2-rc.1` |
+| DeepSeek Harness（`@deepseek-ai/dsh` 及对应的 `@deepseek-ai/dsh-*` 宿主服务） | `>=0.2.2-rc.1 <0.2.3-0`（`rc.1` 起的 0.2.2 预发布版及 `0.2.2` 正式版） | `0.2.2-rc.5` |
 | DSH 使用的 Cordis fork（`@deepseek-ai/cordis`） | `~4.1.0`（`>=4.1.0 <4.2.0`） | `4.1.0` |
 
 宿主服务的支持范围以 [package.json](package.json) 的 `peerDependencies` 为准。Cordis 指 `@deepseek-ai/cordis`，不是未加 scope 的 `cordis` 包；不承诺上述范围以外的版本兼容。
